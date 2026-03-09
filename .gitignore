@@ -1,0 +1,9 @@
+# Rust
+target/
+Cargo.lock
+
+# Environment — NEVER commit this
+.env
+
+# Editor
+.vscode/
