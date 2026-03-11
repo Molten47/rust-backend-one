@@ -10,6 +10,9 @@ pub enum AppError {
     #[error("Invalid credentials")]
     InvalidCredentials,
 
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
     #[error("Database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
 
@@ -27,6 +30,8 @@ impl IntoResponse for AppError {
                 (StatusCode::CONFLICT, self.to_string()),
             AppError::InvalidCredentials =>
                 (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::ValidationError(_) =>
+                (StatusCode::UNPROCESSABLE_ENTITY, self.to_string()),
             AppError::DatabaseError(_) =>
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             AppError::HashingError(_) =>

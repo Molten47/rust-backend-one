@@ -4,9 +4,11 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use sqlx::PgPool;
 use std::env;
+use validator::Validate;
 
 use crate::{
     errors::AppError,
+    middleware::auth::AuthUser,
     models::user::{AuthResponse, Claims, LoginRequest, SignupRequest, User},
 };
 
@@ -16,6 +18,10 @@ pub async fn signup(
     State(pool): State<PgPool>,
     Json(body): Json<SignupRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
+
+    // 0. Validate input
+    body.validate()
+        .map_err(|e| AppError::ValidationError(e.to_string()))?;
 
     // 1. Check if email already exists
     let existing = sqlx::query_as::<_, User>(
@@ -63,6 +69,10 @@ pub async fn login(
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
 
+    // 0. Validate input
+    body.validate()
+        .map_err(|e| AppError::ValidationError(e.to_string()))?;
+
     // 1. Find user by email
     let user = sqlx::query_as::<_, User>(
         "SELECT * FROM users WHERE email = $1"
@@ -70,7 +80,7 @@ pub async fn login(
     .bind(&body.email)
     .fetch_optional(&pool)
     .await?
-    .ok_or(AppError::InvalidCredentials)?; // None → error
+    .ok_or(AppError::InvalidCredentials)?;
 
     // 2. Verify password against stored hash
     let valid = verify(&body.password, &user.password_hash)
@@ -114,4 +124,30 @@ fn generate_token(user: &User) -> Result<String, AppError> {
         &EncodingKey::from_secret(secret.as_bytes()),
     )
     .map_err(|e| AppError::TokenError(e.to_string()))
+}
+
+// ── GET ME ───────────────────────────────────────────────────────────────────
+
+pub async fn me(
+    State(pool): State<PgPool>,
+    AuthUser(claims): AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+
+    let user_id = uuid::Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::TokenError("Invalid user ID in token".into()))?;
+
+    let user = sqlx::query_as::<_, User>(
+        "SELECT * FROM users WHERE id = $1"
+    )
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await?
+    .ok_or(AppError::InvalidCredentials)?;
+
+    Ok(Json(serde_json::json!({
+        "user_id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "created_at": user.created_at,
+    })))
 }

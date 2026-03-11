@@ -1,8 +1,9 @@
 mod errors;
+mod middleware;
 mod models;
 mod routes;
 
-use axum::{routing::post, Router};
+use axum::{routing::{get, post}, Router};
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use std::env;
@@ -39,6 +40,7 @@ async fn main() {
     let app = Router::new()
         .route("/auth/signup", post(routes::auth::signup))
         .route("/auth/login",  post(routes::auth::login))
+        .route("/auth/me",     get(routes::auth::me))   
         .with_state(pool)
         .layer(cors);
 
@@ -50,6 +52,7 @@ async fn main() {
     println!("🚀 Server running at http://localhost:3000");
     println!("   POST /auth/signup");
     println!("   POST /auth/login");
+    println!("   GET  /auth/me");   // 👈 new
 
     axum::serve(listener, app).await.unwrap();
 }

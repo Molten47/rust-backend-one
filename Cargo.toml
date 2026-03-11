@@ -10,12 +10,17 @@ tokio = { version = "1", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
+
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "postgres", "uuid", "chrono", "migrate"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
 
 # Auth
 bcrypt = "0.15"
