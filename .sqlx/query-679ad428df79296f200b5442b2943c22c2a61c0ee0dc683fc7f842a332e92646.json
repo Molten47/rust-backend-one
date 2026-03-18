@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            o.id,\n            o.bookstore_id,\n            o.status,\n            o.total_amount,\n            o.placed_at,\n            COUNT(oi.id) AS item_count\n        FROM orders o\n        LEFT JOIN order_items oi ON oi.order_id = o.id\n        WHERE o.user_id = $1\n          AND ($2::timestamptz IS NULL OR o.placed_at < $2)\n          AND ($3::text IS NULL OR o.status = $3)\n        GROUP BY o.id\n        ORDER BY o.placed_at DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "bookstore_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "total_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "placed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "item_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "679ad428df79296f200b5442b2943c22c2a61c0ee0dc683fc7f842a332e92646"
+}

@@ -21,6 +21,9 @@ pub enum AppError {
 
     #[error("Token error: {0}")]
     TokenError(String),
+
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
 }
 
 impl IntoResponse for AppError {
@@ -38,6 +41,8 @@ impl IntoResponse for AppError {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             AppError::TokenError(_) =>
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            AppError::Unauthorized(_) =>
+               (StatusCode::UNAUTHORIZED, self.to_string()),
         };
 
         (status, Json(json!({ "error": message }))).into_response()

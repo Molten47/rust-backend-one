@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            ci.id,\n            ci.book_id,\n            ci.quantity,\n            ci.price_snapshot,\n            b.title,\n            b.author,\n            b.cover_emoji,\n            b.cover_color,\n            b.cover_url,\n            b.bookstore_id,\n            bs.name AS bookstore_name\n        FROM cart_items ci\n        JOIN books b ON ci.book_id = b.id\n        JOIN bookstores bs ON b.bookstore_id = bs.id\n        WHERE ci.cart_id = $1\n        ORDER BY ci.created_at ASC  \n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "book_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "quantity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "price_snapshot",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "author",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "cover_emoji",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "cover_color",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "cover_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "bookstore_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 10,
+        "name": "bookstore_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "fbf018ab37e25e9c9461442218053412e5fd58f72384db738211796a1203a24c"
+}

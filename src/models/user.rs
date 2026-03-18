@@ -43,13 +43,20 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-// What we send back on success
+
+// What we send back on success — no token in body anymore
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
-    pub token: String,
     pub user_id: Uuid,
     pub username: String,
     pub email: String,
+}
+
+// Separate type for the refresh endpoint
+#[derive(Debug, Serialize)]
+pub struct RefreshResponse {
+    pub user_id: Uuid,
+    pub username: String,
 }
 
 // JWT claims — what gets encoded in the token
@@ -61,7 +68,6 @@ pub struct Claims {
 }
 
 // ── VALIDATORS ───────────────────────────────────────────────────────────────
-
 
 
 // Username — only letters, numbers, underscores
@@ -77,6 +83,7 @@ fn validate_username(username: &str) -> Result<(), validator::ValidationError> {
 
 // Password — must have uppercase, lowercase, and a number
 fn validate_password_strength(password: &str) -> Result<(), validator::ValidationError> {
+
     let has_uppercase = password.chars().any(|c| c.is_uppercase());
     let has_lowercase = password.chars().any(|c| c.is_lowercase());
     let has_number = password.chars().any(|c| c.is_numeric());
@@ -89,3 +96,14 @@ fn validate_password_strength(password: &str) -> Result<(), validator::Validatio
         ))
     }
 }
+#[allow(dead_code)]
+#[derive(Debug, sqlx::FromRow)]
+pub struct RefreshToken {
+    pub id: uuid::Uuid,
+    pub user_id: uuid::Uuid,
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+// Refresh token database row

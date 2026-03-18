@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ci.id, ci.book_id, ci.quantity, b.price, b.bookstore_id\n        FROM cart_items ci\n        JOIN carts c ON c.id = ci.cart_id\n        JOIN books b ON b.id = ci.book_id\n        WHERE c.user_id = $1\n        AND b.bookstore_id = $2\n        AND (\n            $3::uuid[] = '{}'::uuid[]\n            OR ci.id = ANY($3)\n        )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "book_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "quantity",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "bookstore_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "22e3f0da32c64b898aa4c36b2b03619b8e5876b933b4c1763836c338840601e8"
+}

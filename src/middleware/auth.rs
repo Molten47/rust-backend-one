@@ -1,10 +1,11 @@
 use axum::{
     async_trait,
     extract::FromRequestParts,
-    http::{request::Parts, HeaderMap},
+    http::request::Parts,
 };
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use std::env;
+use tower_cookies::Cookies;
 
 use crate::{errors::AppError, models::user::Claims};
 
@@ -17,8 +18,16 @@ where
 {
     type Rejection = AppError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let token = extract_token(&parts.headers)?;
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+
+        let cookies = Cookies::from_request_parts(parts, state)
+            .await
+            .map_err(|_| AppError::Unauthorized("Could not read cookies".into()))?;
+
+        let token = cookies
+            .get("access_token")
+            .map(|c| c.value().to_string())
+            .ok_or(AppError::Unauthorized("No access token cookie".into()))?;
 
         let secret = env::var("JWT_SECRET")
             .map_err(|_| AppError::TokenError("JWT_SECRET not set".into()))?;
@@ -28,22 +37,8 @@ where
             &DecodingKey::from_secret(secret.as_bytes()),
             &Validation::default(),
         )
-        .map_err(|e| AppError::TokenError(e.to_string()))?;
+        .map_err(|e| AppError::Unauthorized(e.to_string()))?;
 
         Ok(AuthUser(token_data.claims))
     }
-}
-
-fn extract_token(headers: &HeaderMap) -> Result<String, AppError> {
-    let auth_header = headers
-        .get("Authorization")
-        .ok_or(AppError::TokenError("Missing Authorization header".into()))?
-        .to_str()
-        .map_err(|_| AppError::TokenError("Invalid Authorization header".into()))?;
-
-    if !auth_header.starts_with("Bearer ") {
-        return Err(AppError::TokenError("Authorization header must start with 'Bearer '".into()));
-    }
-
-    Ok(auth_header[7..].to_string())
 }

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT w.id as wishlist_id, wi.book_id\n        FROM wishlists w\n        JOIN wishlist_items wi ON wi.wishlist_id = w.id\n        WHERE wi.id = $1 AND w.user_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "wishlist_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "book_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3e2bfd0fb441d00db6b0db13b555c406a29716c910ea2fb5e4e2ffe33d2c8c36"
+}
