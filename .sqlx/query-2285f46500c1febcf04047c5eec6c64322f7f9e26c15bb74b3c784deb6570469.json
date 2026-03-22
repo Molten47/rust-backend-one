@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO locations (city, district, state, country)\n        VALUES (INITCAP($1), INITCAP($2), INITCAP($1), 'Nigeria')\n        ON CONFLICT (city, district) DO UPDATE\n            SET city = EXCLUDED.city\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2285f46500c1febcf04047c5eec6c64322f7f9e26c15bb74b3c784deb6570469"
+}

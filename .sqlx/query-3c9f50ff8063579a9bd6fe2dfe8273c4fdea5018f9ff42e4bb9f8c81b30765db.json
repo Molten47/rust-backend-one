@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bookstores SET owner_id = NULL WHERE owner_id IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "3c9f50ff8063579a9bd6fe2dfe8273c4fdea5018f9ff42e4bb9f8c81b30765db"
+}

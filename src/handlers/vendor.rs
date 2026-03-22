@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 use uuid::Uuid;
+use chrono::Utc;
 
 use crate::{
     errors::AppError,
@@ -81,6 +82,9 @@ pub async fn apply_as_vendor(
 }
 
 // ── GET /vendor/status ────────────────────────────────────────────
+// Auto-approves after 60s — restart-safe, no Tokio tasks.
+// Only flips role to vendor. Bookstore creation is handled
+// separately by the setup wizard (POST /vendor/bookstore).
 
 pub async fn get_application_status(
     State(state): State<AppState>,
@@ -100,7 +104,50 @@ pub async fn get_application_status(
     )
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| AppError::ValidationError("No application found".into()))?;
+    .ok_or_else(|| AppError::NotFound("No application found".into()))?;
+
+    // Auto-approve after 60 seconds
+    if row.status == "pending" {
+        let elapsed = Utc::now()
+            .signed_duration_since(row.submitted_at)
+            .num_seconds();
+
+        if elapsed >= 60 {
+            tracing::info!(
+                "Auto-approving application {} after {}s",
+                row.id, elapsed
+            );
+
+            // 1. Mark application approved
+            sqlx::query!(
+                "UPDATE vendor_applications
+                 SET status = 'approved', reviewed_at = NOW()
+                 WHERE id = $1",
+                row.id
+            )
+            .execute(&state.pool)
+            .await?;
+
+            // 2. Flip user role to vendor
+            // No bookstore link here — the setup wizard handles that
+            sqlx::query!(
+                "UPDATE users SET role = 'vendor' WHERE id = $1",
+                user_id
+            )
+            .execute(&state.pool)
+            .await?;
+
+            return Ok(Json(VendorApplicationResponse {
+                id:            row.id,
+                store_name:    row.store_name,
+                store_address: row.store_address,
+                city:          row.city,
+                status:        "approved".to_string(),
+                submitted_at:  row.submitted_at,
+                reviewed_at:   Some(Utc::now()),
+            }));
+        }
+    }
 
     Ok(Json(VendorApplicationResponse {
         id:            row.id,

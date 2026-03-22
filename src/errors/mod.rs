@@ -24,6 +24,13 @@ pub enum AppError {
 
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
+
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
+    #[error("Not found: {0}")]
+    #[allow(dead_code)]
+    NotFound(String),
 }
 
 impl IntoResponse for AppError {
@@ -42,7 +49,11 @@ impl IntoResponse for AppError {
             AppError::TokenError(_) =>
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             AppError::Unauthorized(_) =>
-               (StatusCode::UNAUTHORIZED, self.to_string()),
+                (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::Forbidden(_) =>
+                (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::NotFound(_) =>
+                (StatusCode::NOT_FOUND, self.to_string()),
         };
 
         (status, Json(json!({ "error": message }))).into_response()

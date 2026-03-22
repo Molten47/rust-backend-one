@@ -21,8 +21,6 @@ use tower_governor::governor::GovernorConfigBuilder;
 use cache::{CartCache, OrdersCache, OrderDetailCache, EventsCache};
 use middleware::rate_limit::JwtUserKeyExtractor;
 
-// ── App State ─────────────────────────────────────────────────────
-
 #[derive(Clone)]
 pub struct AppState {
     pub pool:               PgPool,
@@ -32,8 +30,6 @@ pub struct AppState {
     pub events_cache:       EventsCache,
 }
 
-// ── Main ──────────────────────────────────────────────────────────
-
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -42,18 +38,15 @@ async fn main() {
     let database_url = env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set in .env");
 
-    // ── DB pool with tuned settings ───────────────────────────────
-    // acquire_timeout: fail fast if pool exhausted rather than hang
-    // max_lifetime:    recycle connections to avoid stale state
-    let pool = PgPoolOptions::new()
-        .max_connections(10)
-        .min_connections(2)
-        .acquire_timeout(Duration::from_secs(3))
-        .max_lifetime(Duration::from_secs(1800))  // 30 min
-        .idle_timeout(Duration::from_secs(600))   // 10 min
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to database");
+let pool = PgPoolOptions::new()
+    .max_connections(20)       // was 10 — give more headroom
+    .min_connections(5)        // was 2 — keep more warm connections ready
+    .acquire_timeout(Duration::from_secs(5))   // was 3 — more breathing room
+    .max_lifetime(Duration::from_secs(1800))
+    .idle_timeout(Duration::from_secs(600))
+    .connect(&database_url)
+    .await
+    .expect("Failed to connect to database");
 
     println!("✅ Connected to database");
 
@@ -65,19 +58,16 @@ async fn main() {
         events_cache:       cache::new_events_cache(),
     };
 
-    // ── CORS ──────────────────────────────────────────────────────
-    let cors = CorsLayer::new()
-        .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::COOKIE])
-        .expose_headers([header::SET_COOKIE])
-        .allow_credentials(true);
+let frontend_origin = env::var("FRONTEND_URL")
+    .unwrap_or_else(|_| "http://localhost:5173".into());
 
-    // ── Rate limiters ─────────────────────────────────────────────
-    //
-    // STRICT — auth + write routes (orders, cart)
-    // 30 requests per second, burst of 20
-    // Tight enough to block bots, loose enough for real users
+let cors = CorsLayer::new()
+    .allow_origin(frontend_origin.parse::<HeaderValue>().unwrap())
+    .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
+    .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::COOKIE])
+    .expose_headers([header::SET_COOKIE])
+    .allow_credentials(true);
+
     let strict_governor = Arc::new(
         GovernorConfigBuilder::default()
             .per_second(30)
@@ -87,21 +77,15 @@ async fn main() {
             .expect("Failed to build strict rate limiter"),
     );
 
-    // RELAXED — browse routes (books, bookstores, events)
-    // 120 requests per second, burst of 40
-    // Allows fast browsing/search without blocking legitimate users
     let relaxed_governor = Arc::new(
         GovernorConfigBuilder::default()
-            .per_second(120)
-            .burst_size(40)
+            .per_second(200)
+            .burst_size(100)
             .key_extractor(JwtUserKeyExtractor)
             .finish()
             .expect("Failed to build relaxed rate limiter"),
     );
 
-    // ── Route groups with per-group rate limiting ─────────────────
-
-    // Auth routes — strict limit (brute force protection)
     let auth_routes = Router::new()
         .route("/auth/signup",  post(routes::auth::signup))
         .route("/auth/login",   post(routes::auth::login))
@@ -110,22 +94,22 @@ async fn main() {
         .route("/auth/me",      get(routes::auth::me))
         .layer(GovernorLayer { config: strict_governor.clone() });
 
-    // Write routes — strict limit (prevent order/cart spam)
     let write_routes = Router::new()
-        .route("/orders",              get(routes::orders::get_orders).post(routes::orders::place_order))
-        .route("/orders/:id",          get(routes::orders::get_order).delete(routes::orders::cancel_order))
-        .route("/cart",                get(routes::cart::get_cart).delete(routes::cart::clear_cart))
-        .route("/cart/items",          post(routes::cart::add_item))
-        .route("/cart/items/:item_id", patch(routes::cart::update_quantity).delete(routes::cart::remove_item))
+        .route("/orders",                post(routes::orders::place_order))
+        .route("/orders/:id",            get(routes::orders::get_order).delete(routes::orders::cancel_order))
+        .route("/cart",                  get(routes::cart::get_cart).delete(routes::cart::clear_cart))
+        .route("/cart/items",            post(routes::cart::add_item))
+        .route("/cart/items/:item_id",   patch(routes::cart::update_quantity).delete(routes::cart::remove_item))
         .route("/addresses",             get(routes::address::get_addresses).post(routes::address::create_address))
         .route("/addresses/:id",         patch(routes::address::update_address).delete(routes::address::delete_address))
         .route("/addresses/:id/default", patch(routes::address::set_default_address))
-        .route("/vendor/apply",          post(routes::vendor::apply_as_vendor))
-        .route("/vendor/status",         get(routes::vendor::get_application_status))
+        // Vendor writes only — status polling moved to browse_routes
+        .route("/vendor/apply",     post(routes::vendor::apply_as_vendor))
+        .route("/vendor/bookstore", post(handlers::vendor_bookstore::create_vendor_bookstore))
         .layer(GovernorLayer { config: strict_governor.clone() });
 
-    // Browse routes — relaxed limit (search, discovery)
     let browse_routes = Router::new()
+        .route("/orders",                 get(routes::orders::get_orders))
         .route("/books",                  get(routes::books::get_books))
         .route("/books/:id",              get(routes::books::get_book))
         .route("/books/:id/availability", get(routes::books::get_book_availability))
@@ -136,17 +120,17 @@ async fn main() {
         .route("/locations",              get(routes::bookstores::get_locations))
         .route("/events",                 get(routes::events::get_events))
         .route("/events/:id",             get(routes::events::get_event))
-        .route("/wishlist",                 get(routes::cart::get_wishlist))
+        .route("/wishlist",               get(routes::cart::get_wishlist))
+        // Vendor status — read-only polling, belongs on relaxed limiter
+        .route("/vendor/status",          get(routes::vendor::get_application_status))
         .layer(GovernorLayer { config: relaxed_governor.clone() });
 
-    // Wishlist write — strict
     let wishlist_write_routes = Router::new()
         .route("/wishlist/items",               post(routes::cart::add_to_wishlist))
         .route("/wishlist/items/:item_id",      delete(routes::cart::remove_from_wishlist))
         .route("/wishlist/items/:item_id/move", post(routes::cart::move_to_cart))
         .layer(GovernorLayer { config: strict_governor.clone() });
 
-    // ── Assemble app with global middleware ───────────────────────
     let app = Router::new()
         .merge(auth_routes)
         .merge(write_routes)
@@ -155,24 +139,21 @@ async fn main() {
         .with_state(state)
         .layer(CookieManagerLayer::new())
         .layer(cors)
-        // Compression: gzip + brotli — cuts JSON 60-80%
-        // Especially impactful on Nigerian mobile networks
         .layer(CompressionLayer::new())
-        // Request tracing — every request gets a span with method + URI
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
     println!("🚀 Server running at http://localhost:3000");
     println!();
-    println!("   ── Auth (strict: 10/s, burst 5) ──────");
+    println!("   ── Auth (strict) ─────────────────────");
     println!("   POST   /auth/signup");
     println!("   POST   /auth/login");
     println!("   POST   /auth/refresh");
     println!("   POST   /auth/logout");
     println!("   GET    /auth/me");
     println!();
-    println!("   ── Books (relaxed: 60/s, burst 20) ───");
+    println!("   ── Books (relaxed) ───────────────────");
     println!("   GET    /books  [paginated: ?limit=&cursor=]");
     println!("   GET    /books/:id");
     println!("   GET    /books/:id/availability");
@@ -184,7 +165,7 @@ async fn main() {
     println!("   GET    /bookstores/:id/books");
     println!("   GET    /locations");
     println!();
-    println!("   ── Cart (strict: 10/s, burst 5) ──────");
+    println!("   ── Cart (strict) ─────────────────────");
     println!("   GET    /cart");
     println!("   POST   /cart/items");
     println!("   PATCH  /cart/items/:item_id");
@@ -197,7 +178,7 @@ async fn main() {
     println!("   DELETE /wishlist/items/:item_id");
     println!("   POST   /wishlist/items/:item_id/move");
     println!();
-    println!("   ── Orders (strict) [paginated] ───────");
+    println!("   ── Orders (paginated) ────────────────");
     println!("   GET    /orders  [?limit=&cursor=&status=]");
     println!("   POST   /orders");
     println!("   GET    /orders/:id");
@@ -208,8 +189,9 @@ async fn main() {
     println!("   GET    /events/:id");
     println!();
     println!("   ── Vendor ────────────────────────────");
-    println!("   POST   /vendor/apply");
-    println!("   GET    /vendor/status");
+    println!("   POST   /vendor/apply     (strict)");
+    println!("   GET    /vendor/status    (relaxed — polling safe)");
+    println!("   POST   /vendor/bookstore (strict)");
     println!();
     println!("   ── Addresses (strict) ────────────────");
     println!("   GET    /addresses");

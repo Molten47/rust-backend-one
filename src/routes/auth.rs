@@ -1,7 +1,7 @@
 use axum::{extract::State, Json};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use bcrypt::{hash, verify, DEFAULT_COST};
+use bcrypt::{hash, verify};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use std::env;
@@ -15,6 +15,11 @@ use crate::{
     middleware::auth::AuthUser,
     models::user::{AuthResponse, Claims, LoginRequest, RefreshResponse, SignupRequest, User},
 };
+
+// Cost 10 = ~50ms per hash (cost 12 = ~200ms — too slow for a responsive app)
+// The security difference only matters against offline GPU brute-force attacks
+// which requires an attacker to already have your database dump.
+const BCRYPT_COST: u32 = 10;
 
 // ── SIGNUP ───────────────────────────────────────────────────────
 
@@ -36,7 +41,7 @@ pub async fn signup(
         return Err(AppError::UserAlreadyExists);
     }
 
-    let password_hash = hash(&body.password, DEFAULT_COST)
+    let password_hash = hash(&body.password, BCRYPT_COST)
         .map_err(|e| AppError::HashingError(e.to_string()))?;
 
     let user = sqlx::query_as::<_, User>(
@@ -74,8 +79,16 @@ pub async fn login(
         .await?
         .ok_or(AppError::InvalidCredentials)?;
 
-    let valid = verify(&body.password, &user.password_hash)
-        .map_err(|e| AppError::HashingError(e.to_string()))?;
+    // Run bcrypt verify on a blocking thread — it's CPU-intensive and
+    // would block the async runtime if called directly
+    let password_hash = user.password_hash.clone();
+    let password      = body.password.clone();
+    let valid = tokio::task::spawn_blocking(move || {
+        verify(&password, &password_hash)
+    })
+    .await
+    .map_err(|_| AppError::HashingError("Thread join error".into()))?
+    .map_err(|e| AppError::HashingError(e.to_string()))?;
 
     if !valid {
         return Err(AppError::InvalidCredentials);
@@ -143,8 +156,27 @@ pub async fn logout(
             .await;
     }
 
-    cookies.remove(Cookie::new("access_token", ""));
-    cookies.remove(Cookie::new("refresh_token", ""));
+    let is_production = env::var("RUST_ENV")
+        .map(|v| v == "production")
+        .unwrap_or(false);
+
+    let mut access = Cookie::new("access_token", "");
+    access.set_path("/");
+    access.set_max_age(time::Duration::seconds(0));
+
+    let mut refresh = Cookie::new("refresh_token", "");
+    refresh.set_path("/auth/refresh");
+    refresh.set_max_age(time::Duration::seconds(0));
+
+    if is_production {
+        access.set_secure(true);
+        access.set_same_site(tower_cookies::cookie::SameSite::None);
+        refresh.set_secure(true);
+        refresh.set_same_site(tower_cookies::cookie::SameSite::None);
+    }
+
+    cookies.remove(access);
+    cookies.remove(refresh);
 
     StatusCode::OK
 }
@@ -169,6 +201,7 @@ pub async fn me(
         "user_id": user.id,
         "username": user.username,
         "email": user.email,
+        "role": user.role,
         "created_at": user.created_at,
     })))
 }
@@ -183,15 +216,20 @@ async fn set_auth_cookies(
     let secret = env::var("JWT_SECRET")
         .map_err(|_| AppError::TokenError("JWT_SECRET not set".into()))?;
 
+    let is_production = env::var("RUST_ENV")
+        .map(|v| v == "production")
+        .unwrap_or(false);
+
     let access_exp = Utc::now()
         .checked_add_signed(Duration::minutes(15))
         .unwrap()
         .timestamp() as usize;
 
     let claims = Claims {
-        sub: user.id.to_string(),
+        sub:      user.id.to_string(),
         username: user.username.clone(),
-        exp: access_exp,
+        role:     user.role.clone(),
+        exp:      access_exp,
     };
 
     let access_token = encode(
@@ -202,7 +240,7 @@ async fn set_auth_cookies(
     .map_err(|e| AppError::TokenError(e.to_string()))?;
 
     let refresh_token = Uuid::new_v4().to_string();
-    let refresh_exp = Utc::now()
+    let refresh_exp   = Utc::now()
         .checked_add_signed(Duration::days(7))
         .unwrap();
 
@@ -224,6 +262,14 @@ async fn set_auth_cookies(
     refresh_cookie.set_http_only(true);
     refresh_cookie.set_path("/auth/refresh");
     refresh_cookie.set_max_age(time::Duration::days(7));
+
+    if is_production {
+        access_cookie.set_secure(true);
+        access_cookie.set_same_site(tower_cookies::cookie::SameSite::None);
+
+        refresh_cookie.set_secure(true);
+        refresh_cookie.set_same_site(tower_cookies::cookie::SameSite::None);
+    }
 
     cookies.add(access_cookie);
     cookies.add(refresh_cookie);

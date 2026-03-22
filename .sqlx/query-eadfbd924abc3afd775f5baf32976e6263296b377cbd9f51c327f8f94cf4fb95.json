@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET role = 'reader' WHERE email = 'randellbark90@gmail.com'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "eadfbd924abc3afd775f5baf32976e6263296b377cbd9f51c327f8f94cf4fb95"
+}

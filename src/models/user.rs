@@ -10,6 +10,7 @@ pub struct User {
     pub username: String,
     pub email: String,
     pub password_hash: String,
+    pub role: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -64,7 +65,9 @@ pub struct RefreshResponse {
 pub struct Claims {
     pub sub: String,
     pub username: String,
+     pub role:String,
     pub exp: usize,
+   
 }
 
 // ── VALIDATORS ───────────────────────────────────────────────────────────────
