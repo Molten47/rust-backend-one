@@ -20,6 +20,9 @@ use tower_governor::GovernorLayer;
 use tower_governor::governor::GovernorConfigBuilder;
 use cache::{CartCache, OrdersCache, OrderDetailCache, EventsCache};
 use middleware::rate_limit::JwtUserKeyExtractor;
+use axum::routing::options;
+use axum::http::StatusCode;
+
 
 #[derive(Clone)]
 pub struct AppState {
@@ -80,6 +83,8 @@ let cors = CorsLayer::new()
     .allow_credentials(true)
     .max_age(Duration::from_secs(3600));
 
+    
+
     let strict_governor = Arc::new(
         GovernorConfigBuilder::default()
             .per_second(30)
@@ -105,6 +110,17 @@ let cors = CorsLayer::new()
         .route("/auth/logout",  post(routes::auth::logout))
         .route("/auth/me",      get(routes::auth::me))
         .layer(GovernorLayer { config: strict_governor.clone() });
+
+    let options_routes = Router::new()
+    .route("/auth/signup",  options(|| async { StatusCode::OK }))
+    .route("/auth/login",   options(|| async { StatusCode::OK }))
+    .route("/auth/refresh", options(|| async { StatusCode::OK }))
+    .route("/auth/logout",  options(|| async { StatusCode::OK }))
+    .route("/auth/me",      options(|| async { StatusCode::OK }))
+    .route("/vendor/apply",     options(|| async { StatusCode::OK }))
+    .route("/vendor/bookstore", options(|| async { StatusCode::OK }))
+    .route("/orders",       options(|| async { StatusCode::OK }))
+    .route("/cart/items",   options(|| async { StatusCode::OK }));
 
     let write_routes = Router::new()
         .route("/orders",                post(routes::orders::place_order))
@@ -145,6 +161,7 @@ let cors = CorsLayer::new()
 
     let app = Router::new()
         .merge(auth_routes)
+        .merge(options_routes)  
         .merge(write_routes)
         .merge(browse_routes)
         .merge(wishlist_write_routes)
