@@ -64,9 +64,15 @@ let frontend_origin = env::var("FRONTEND_URL")
 let cors = CorsLayer::new()
     .allow_origin(frontend_origin.parse::<HeaderValue>().unwrap())
     .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
-    .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::COOKIE])
+    .allow_headers([
+        header::CONTENT_TYPE,
+        header::AUTHORIZATION,
+        header::COOKIE,
+        header::ACCEPT,
+    ])
     .expose_headers([header::SET_COOKIE])
-    .allow_credentials(true);
+    .allow_credentials(true)
+    .max_age(Duration::from_secs(3600));
 
     let strict_governor = Arc::new(
         GovernorConfigBuilder::default()
