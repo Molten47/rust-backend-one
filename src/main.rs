@@ -5,7 +5,8 @@ mod routes;
 mod cache;
 mod handlers;
 
-use axum::{routing::{get, post, patch, delete}, Router, extract::Request, response::Response, middleware::{self, Next}};
+use axum::{routing::{get, post, patch, delete}, Router, extract::Request, response::Response};
+use axum::middleware::{self as axum_middleware, Next};
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
@@ -157,7 +158,7 @@ async fn main() {
         .merge(browse_routes)
         .merge(wishlist_write_routes)
         .with_state(state)
-        .layer(middleware::from_fn(handle_preflight))
+        .layer(axum_middleware::from_fn(handle_preflight))
         .layer(cors)
         .layer(CookieManagerLayer::new())
         .layer(CompressionLayer::new())
