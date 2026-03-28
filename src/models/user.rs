@@ -6,13 +6,13 @@ use validator::Validate;
 // The full database row
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct User {
-    pub id: Uuid,
-    pub username: String,
-    pub email: String,
+    pub id:            Uuid,
+    pub username:      String,
+    pub email:         String,
     pub password_hash: String,
-    pub role: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub role:          String,
+    pub created_at:    DateTime<Utc>,
+    pub updated_at:    DateTime<Utc>,
 }
 
 // What the client sends to /auth/signup
@@ -44,34 +44,34 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-
-// What we send back on success — no token in body anymore
+// What we send back on signup/login — now includes role and access_token
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
-    pub user_id: Uuid,
-    pub username: String,
-    pub email: String,
+    pub user_id:      Uuid,
+    pub username:     String,
+    pub email:        String,
+    pub role:         String,
+    pub access_token: String,
 }
 
-// Separate type for the refresh endpoint
+// Refresh endpoint response — includes new access_token
 #[derive(Debug, Serialize)]
 pub struct RefreshResponse {
-    pub user_id: Uuid,
-    pub username: String,
+    pub user_id:      Uuid,
+    pub username:     String,
+    pub access_token: String,
 }
 
 // JWT claims — what gets encoded in the token
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,
+    pub sub:      String,
     pub username: String,
-     pub role:String,
-    pub exp: usize,
-   
+    pub role:     String,
+    pub exp:      usize,
 }
 
-// ── VALIDATORS ───────────────────────────────────────────────────────────────
-
+// ── VALIDATORS ───────────────────────────────────────────────────
 
 // Username — only letters, numbers, underscores
 fn validate_username(username: &str) -> Result<(), validator::ValidationError> {
@@ -86,10 +86,9 @@ fn validate_username(username: &str) -> Result<(), validator::ValidationError> {
 
 // Password — must have uppercase, lowercase, and a number
 fn validate_password_strength(password: &str) -> Result<(), validator::ValidationError> {
-
     let has_uppercase = password.chars().any(|c| c.is_uppercase());
     let has_lowercase = password.chars().any(|c| c.is_lowercase());
-    let has_number = password.chars().any(|c| c.is_numeric());
+    let has_number    = password.chars().any(|c| c.is_numeric());
 
     if has_uppercase && has_lowercase && has_number {
         Ok(())
@@ -99,14 +98,13 @@ fn validate_password_strength(password: &str) -> Result<(), validator::Validatio
         ))
     }
 }
+
 #[allow(dead_code)]
 #[derive(Debug, sqlx::FromRow)]
 pub struct RefreshToken {
-    pub id: uuid::Uuid,
-    pub user_id: uuid::Uuid,
-    pub token: String,
+    pub id:         Uuid,
+    pub user_id:    Uuid,
+    pub token:      String,
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }
-
-// Refresh token database row

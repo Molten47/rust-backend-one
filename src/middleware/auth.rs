@@ -1,7 +1,7 @@
 use axum::{
     async_trait,
     extract::FromRequestParts,
-    http::request::Parts,
+    http::{request::Parts, header::AUTHORIZATION},
 };
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use std::env;
@@ -19,18 +19,30 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-
-        let cookies = Cookies::from_request_parts(parts, state)
-            .await
-            .map_err(|_| AppError::Unauthorized("Could not read cookies".into()))?;
-
-        let token = cookies
-            .get("access_token")
-            .map(|c| c.value().to_string())
-            .ok_or(AppError::Unauthorized("No access token cookie".into()))?;
-
         let secret = env::var("JWT_SECRET")
             .map_err(|_| AppError::TokenError("JWT_SECRET not set".into()))?;
+
+        // ── 1. Try Authorization: Bearer <token> header first ────
+        let bearer_token = parts
+            .headers
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(|t| t.to_string());
+
+        // ── 2. Fall back to cookie ────────────────────────────────
+        let token = if let Some(t) = bearer_token {
+            t
+        } else {
+            let cookies = Cookies::from_request_parts(parts, state)
+                .await
+                .map_err(|_| AppError::Unauthorized("Could not read cookies".into()))?;
+
+            cookies
+                .get("access_token")
+                .map(|c| c.value().to_string())
+                .ok_or(AppError::Unauthorized("No access token".into()))?
+        };
 
         let token_data = decode::<Claims>(
             &token,

@@ -16,9 +16,6 @@ use crate::{
     models::user::{AuthResponse, Claims, LoginRequest, RefreshResponse, SignupRequest, User},
 };
 
-// Cost 10 = ~50ms per hash (cost 12 = ~200ms — too slow for a responsive app)
-// The security difference only matters against offline GPU brute-force attacks
-// which requires an attacker to already have your database dump.
 const BCRYPT_COST: u32 = 10;
 
 // ── SIGNUP ───────────────────────────────────────────────────────
@@ -53,12 +50,14 @@ pub async fn signup(
     .fetch_one(&state.pool)
     .await?;
 
-    set_auth_cookies(&state.pool, &cookies, &user).await?;
+    let access_token = set_auth_cookies(&state.pool, &cookies, &user).await?;
 
     Ok(Json(AuthResponse {
         user_id: user.id,
         username: user.username,
         email: user.email,
+        role: user.role,
+        access_token,
     }))
 }
 
@@ -79,8 +78,6 @@ pub async fn login(
         .await?
         .ok_or(AppError::InvalidCredentials)?;
 
-    // Run bcrypt verify on a blocking thread — it's CPU-intensive and
-    // would block the async runtime if called directly
     let password_hash = user.password_hash.clone();
     let password      = body.password.clone();
     let valid = tokio::task::spawn_blocking(move || {
@@ -94,12 +91,14 @@ pub async fn login(
         return Err(AppError::InvalidCredentials);
     }
 
-    set_auth_cookies(&state.pool, &cookies, &user).await?;
+    let access_token = set_auth_cookies(&state.pool, &cookies, &user).await?;
 
     Ok(Json(AuthResponse {
         user_id: user.id,
         username: user.username,
         email: user.email,
+        role: user.role,
+        access_token,
     }))
 }
 
@@ -134,11 +133,12 @@ pub async fn refresh(
         .await?
         .ok_or(AppError::InvalidCredentials)?;
 
-    set_auth_cookies(&state.pool, &cookies, &user).await?;
+    let access_token = set_auth_cookies(&state.pool, &cookies, &user).await?;
 
     Ok(Json(RefreshResponse {
         user_id: user.id,
         username: user.username,
+        access_token,
     }))
 }
 
@@ -198,21 +198,21 @@ pub async fn me(
         .ok_or(AppError::InvalidCredentials)?;
 
     Ok(Json(serde_json::json!({
-        "user_id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "role": user.role,
+        "user_id":    user.id,
+        "username":   user.username,
+        "email":      user.email,
+        "role":       user.role,
         "created_at": user.created_at,
     })))
 }
 
-// ── HELPER ────────────────────────────────────────────────────────
+// ── HELPER — returns access_token for response body ───────────────
 
 async fn set_auth_cookies(
     pool: &sqlx::PgPool,
     cookies: &Cookies,
     user: &User,
-) -> Result<(), AppError> {
+) -> Result<String, AppError> {
     let secret = env::var("JWT_SECRET")
         .map_err(|_| AppError::TokenError("JWT_SECRET not set".into()))?;
 
@@ -253,7 +253,8 @@ async fn set_auth_cookies(
     .execute(pool)
     .await?;
 
-    let mut access_cookie = Cookie::new("access_token", access_token);
+    // Keep setting cookies for desktop browsers that support them
+    let mut access_cookie = Cookie::new("access_token", access_token.clone());
     access_cookie.set_http_only(true);
     access_cookie.set_path("/");
     access_cookie.set_max_age(time::Duration::minutes(15));
@@ -266,7 +267,6 @@ async fn set_auth_cookies(
     if is_production {
         access_cookie.set_secure(true);
         access_cookie.set_same_site(tower_cookies::cookie::SameSite::None);
-
         refresh_cookie.set_secure(true);
         refresh_cookie.set_same_site(tower_cookies::cookie::SameSite::None);
     }
@@ -274,5 +274,7 @@ async fn set_auth_cookies(
     cookies.add(access_cookie);
     cookies.add(refresh_cookie);
 
-    Ok(())
+    // Return token so handlers can include it in the response body
+    // This is the fallback for mobile browsers that block cross-origin cookies
+    Ok(access_token)
 }
